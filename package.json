@@ -4,6 +4,7 @@
   "description": "A virtual dom and web component starter kit",
   "main": "index.js",
   "scripts": {
+    "watch": "watchify ./src/index.js -o dist/bundle.js -v",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -20,5 +21,11 @@
   "bugs": {
     "url": "https://github.com/frankbaele/virtualdom-webcomponent-starter/issues"
   },
-  "homepage": "https://github.com/frankbaele/virtualdom-webcomponent-starter#readme"
+  "homepage": "https://github.com/frankbaele/virtualdom-webcomponent-starter#readme",
+  "dependencies": {
+    "browserify": "^13.0.0",
+    "virtual-dom": "^2.1.1",
+    "watchify": "^3.7.0",
+    "webcomponents.js": "^0.7.21"
+  }
 }
