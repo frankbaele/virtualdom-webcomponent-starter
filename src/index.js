@@ -23,6 +23,4 @@ document.addEventListener("DOMContentLoaded", function () {
         loop.update(xtend({path: href}))
     });
     require('catch-links')(window, show);
-
-
 });

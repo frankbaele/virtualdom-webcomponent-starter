@@ -3,7 +3,7 @@ var router = require('routes')();
 module.exports = router;
 
 router.addRoute('/', function (m) {
-    return layout(m.state, h('div', 'welcome!'))
+    return layout(m.state, [h('div', 'welcome!'),    h('alert-button')])
 });
 
 router.addRoute('/wow', function (m) {

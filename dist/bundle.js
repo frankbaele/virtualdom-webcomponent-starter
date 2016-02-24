@@ -11165,8 +11165,6 @@ document.addEventListener("DOMContentLoaded", function () {
         loop.update(xtend({path: href}))
     });
     require('catch-links')(window, show);
-
-
 });
 
 },{"./components/components":55,"./router.js":58,"catch-links":5,"main-loop":12,"single-page":20,"virtual-dom":27,"virtual-dom/h":26,"webcomponents.js":51,"xtend":53}],58:[function(require,module,exports){
@@ -11175,7 +11173,7 @@ var router = require('routes')();
 module.exports = router;
 
 router.addRoute('/', function (m) {
-    return layout(m.state, h('div', 'welcome!'))
+    return layout(m.state, [h('div', 'welcome!'),    h('alert-button')])
 });
 
 router.addRoute('/wow', function (m) {
