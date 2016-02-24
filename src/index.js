@@ -1,13 +1,17 @@
 require('webcomponents.js');
-require('./components/components')();
+
 var h = require('virtual-dom/h');
+var mediator = require('mediatorjs');
+var mInstance = new mediator.Mediator();
+require('./components/components')(mInstance);
+mInstance.on('test', function(message){
+   console.log(message)
+});
 var xtend = require('xtend');
 
 var main = require('main-loop');
-var state = {
-    path: location.pathname
-};
-var router = require('./router.js');
+var state = {path: location.pathname};
+var router = require('./router.js')();
 var loop = main(state, render, require('virtual-dom'));
 function render(state) {
     var m = router.match(state.path);

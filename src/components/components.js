@@ -1,4 +1,4 @@
-module.exports =  function(){
-    require('./elements/alertButton')
+module.exports =  function(mediator){
+    require('./elements/alertButton')(mediator)
 };
 

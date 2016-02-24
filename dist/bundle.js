@@ -1,6 +1,287 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+/**
+ * Standalone extraction of Backbone.Events, no external dependency required.
+ * Degrades nicely when Backone/underscore are already available in the current
+ * global context.
+ *
+ * Note that docs suggest to use underscore's `_.extend()` method to add Events
+ * support to some given object. A `mixin()` method has been added to the Events
+ * prototype to avoid using underscore for that sole purpose:
+ *
+ *     var myEventEmitter = BackboneEvents.mixin({});
+ *
+ * Or for a function constructor:
+ *
+ *     function MyConstructor(){}
+ *     MyConstructor.prototype.foo = function(){}
+ *     BackboneEvents.mixin(MyConstructor.prototype);
+ *
+ * (c) 2009-2013 Jeremy Ashkenas, DocumentCloud Inc.
+ * (c) 2013 Nicolas Perriault
+ */
+/* global exports:true, define, module */
+(function() {
+  var root = this,
+      nativeForEach = Array.prototype.forEach,
+      hasOwnProperty = Object.prototype.hasOwnProperty,
+      slice = Array.prototype.slice,
+      idCounter = 0;
+
+  // Returns a partial implementation matching the minimal API subset required
+  // by Backbone.Events
+  function miniscore() {
+    return {
+      keys: Object.keys || function (obj) {
+        if (typeof obj !== "object" && typeof obj !== "function" || obj === null) {
+          throw new TypeError("keys() called on a non-object");
+        }
+        var key, keys = [];
+        for (key in obj) {
+          if (obj.hasOwnProperty(key)) {
+            keys[keys.length] = key;
+          }
+        }
+        return keys;
+      },
+
+      uniqueId: function(prefix) {
+        var id = ++idCounter + '';
+        return prefix ? prefix + id : id;
+      },
+
+      has: function(obj, key) {
+        return hasOwnProperty.call(obj, key);
+      },
+
+      each: function(obj, iterator, context) {
+        if (obj == null) return;
+        if (nativeForEach && obj.forEach === nativeForEach) {
+          obj.forEach(iterator, context);
+        } else if (obj.length === +obj.length) {
+          for (var i = 0, l = obj.length; i < l; i++) {
+            iterator.call(context, obj[i], i, obj);
+          }
+        } else {
+          for (var key in obj) {
+            if (this.has(obj, key)) {
+              iterator.call(context, obj[key], key, obj);
+            }
+          }
+        }
+      },
+
+      once: function(func) {
+        var ran = false, memo;
+        return function() {
+          if (ran) return memo;
+          ran = true;
+          memo = func.apply(this, arguments);
+          func = null;
+          return memo;
+        };
+      }
+    };
+  }
+
+  var _ = miniscore(), Events;
+
+  // Backbone.Events
+  // ---------------
+
+  // A module that can be mixed in to *any object* in order to provide it with
+  // custom events. You may bind with `on` or remove with `off` callback
+  // functions to an event; `trigger`-ing an event fires all callbacks in
+  // succession.
+  //
+  //     var object = {};
+  //     _.extend(object, Backbone.Events);
+  //     object.on('expand', function(){ alert('expanded'); });
+  //     object.trigger('expand');
+  //
+  Events = {
+
+    // Bind an event to a `callback` function. Passing `"all"` will bind
+    // the callback to all events fired.
+    on: function(name, callback, context) {
+      if (!eventsApi(this, 'on', name, [callback, context]) || !callback) return this;
+      this._events || (this._events = {});
+      var events = this._events[name] || (this._events[name] = []);
+      events.push({callback: callback, context: context, ctx: context || this});
+      return this;
+    },
+
+    // Bind an event to only be triggered a single time. After the first time
+    // the callback is invoked, it will be removed.
+    once: function(name, callback, context) {
+      if (!eventsApi(this, 'once', name, [callback, context]) || !callback) return this;
+      var self = this;
+      var once = _.once(function() {
+        self.off(name, once);
+        callback.apply(this, arguments);
+      });
+      once._callback = callback;
+      return this.on(name, once, context);
+    },
+
+    // Remove one or many callbacks. If `context` is null, removes all
+    // callbacks with that function. If `callback` is null, removes all
+    // callbacks for the event. If `name` is null, removes all bound
+    // callbacks for all events.
+    off: function(name, callback, context) {
+      var retain, ev, events, names, i, l, j, k;
+      if (!this._events || !eventsApi(this, 'off', name, [callback, context])) return this;
+      if (!name && !callback && !context) {
+        this._events = {};
+        return this;
+      }
+
+      names = name ? [name] : _.keys(this._events);
+      for (i = 0, l = names.length; i < l; i++) {
+        name = names[i];
+        if (events = this._events[name]) {
+          this._events[name] = retain = [];
+          if (callback || context) {
+            for (j = 0, k = events.length; j < k; j++) {
+              ev = events[j];
+              if ((callback && callback !== ev.callback && callback !== ev.callback._callback) ||
+                  (context && context !== ev.context)) {
+                retain.push(ev);
+              }
+            }
+          }
+          if (!retain.length) delete this._events[name];
+        }
+      }
+
+      return this;
+    },
+
+    // Trigger one or many events, firing all bound callbacks. Callbacks are
+    // passed the same arguments as `trigger` is, apart from the event name
+    // (unless you're listening on `"all"`, which will cause your callback to
+    // receive the true name of the event as the first argument).
+    trigger: function(name) {
+      if (!this._events) return this;
+      var args = slice.call(arguments, 1);
+      if (!eventsApi(this, 'trigger', name, args)) return this;
+      var events = this._events[name];
+      var allEvents = this._events.all;
+      if (events) triggerEvents(events, args);
+      if (allEvents) triggerEvents(allEvents, arguments);
+      return this;
+    },
+
+    // Tell this object to stop listening to either specific events ... or
+    // to every object it's currently listening to.
+    stopListening: function(obj, name, callback) {
+      var listeners = this._listeners;
+      if (!listeners) return this;
+      var deleteListener = !name && !callback;
+      if (typeof name === 'object') callback = this;
+      if (obj) (listeners = {})[obj._listenerId] = obj;
+      for (var id in listeners) {
+        listeners[id].off(name, callback, this);
+        if (deleteListener) delete this._listeners[id];
+      }
+      return this;
+    }
+
+  };
+
+  // Regular expression used to split event strings.
+  var eventSplitter = /\s+/;
+
+  // Implement fancy features of the Events API such as multiple event
+  // names `"change blur"` and jQuery-style event maps `{change: action}`
+  // in terms of the existing API.
+  var eventsApi = function(obj, action, name, rest) {
+    if (!name) return true;
+
+    // Handle event maps.
+    if (typeof name === 'object') {
+      for (var key in name) {
+        obj[action].apply(obj, [key, name[key]].concat(rest));
+      }
+      return false;
+    }
+
+    // Handle space separated event names.
+    if (eventSplitter.test(name)) {
+      var names = name.split(eventSplitter);
+      for (var i = 0, l = names.length; i < l; i++) {
+        obj[action].apply(obj, [names[i]].concat(rest));
+      }
+      return false;
+    }
+
+    return true;
+  };
+
+  // A difficult-to-believe, but optimized internal dispatch function for
+  // triggering events. Tries to keep the usual cases speedy (most internal
+  // Backbone events have 3 arguments).
+  var triggerEvents = function(events, args) {
+    var ev, i = -1, l = events.length, a1 = args[0], a2 = args[1], a3 = args[2];
+    switch (args.length) {
+      case 0: while (++i < l) (ev = events[i]).callback.call(ev.ctx); return;
+      case 1: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1); return;
+      case 2: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1, a2); return;
+      case 3: while (++i < l) (ev = events[i]).callback.call(ev.ctx, a1, a2, a3); return;
+      default: while (++i < l) (ev = events[i]).callback.apply(ev.ctx, args);
+    }
+  };
+
+  var listenMethods = {listenTo: 'on', listenToOnce: 'once'};
+
+  // Inversion-of-control versions of `on` and `once`. Tell *this* object to
+  // listen to an event in another object ... keeping track of what it's
+  // listening to.
+  _.each(listenMethods, function(implementation, method) {
+    Events[method] = function(obj, name, callback) {
+      var listeners = this._listeners || (this._listeners = {});
+      var id = obj._listenerId || (obj._listenerId = _.uniqueId('l'));
+      listeners[id] = obj;
+      if (typeof name === 'object') callback = this;
+      obj[implementation](name, callback, this);
+      return this;
+    };
+  });
+
+  // Aliases for backwards compatibility.
+  Events.bind   = Events.on;
+  Events.unbind = Events.off;
+
+  // Mixin utility
+  Events.mixin = function(proto) {
+    var exports = ['on', 'once', 'off', 'trigger', 'stopListening', 'listenTo',
+                   'listenToOnce', 'bind', 'unbind'];
+    _.each(exports, function(name) {
+      proto[name] = this[name];
+    }, this);
+    return proto;
+  };
+
+  // Export Events as BackboneEvents depending on current context
+  if (typeof exports !== 'undefined') {
+    if (typeof module !== 'undefined' && module.exports) {
+      exports = module.exports = Events;
+    }
+    exports.BackboneEvents = Events;
+  }else if (typeof define === "function"  && typeof define.amd == "object") {
+    define(function() {
+      return Events;
+    });
+  } else {
+    root.BackboneEvents = Events;
+  }
+})(this);
 
 },{}],2:[function(require,module,exports){
+module.exports = require('./backbone-events-standalone');
+
+},{"./backbone-events-standalone":1}],3:[function(require,module,exports){
+
+},{}],4:[function(require,module,exports){
 /*!
  * Cross-Browser Split 1.1.1
  * Copyright 2007-2012 Steven Levithan <stevenlevithan.com>
@@ -108,7 +389,7 @@ module.exports = (function split(undef) {
   return self;
 })();
 
-},{}],3:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -201,7 +482,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],4:[function(require,module,exports){
+},{}],6:[function(require,module,exports){
 module.exports = function(obj) {
     if (typeof obj === 'string') return camelCase(obj);
     return walk(obj);
@@ -262,7 +543,7 @@ function reduce (xs, f, acc) {
     return acc;
 }
 
-},{}],5:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 var url = require('url');
 
 module.exports = function (root, cb) {
@@ -294,7 +575,7 @@ module.exports = function (root, cb) {
     });
 };
 
-},{"url":22}],6:[function(require,module,exports){
+},{"url":25}],8:[function(require,module,exports){
 var camelize = require("camelize")
 var template = require("string-template")
 var extend = require("xtend/mutable")
@@ -344,7 +625,7 @@ function TypedError(args) {
 }
 
 
-},{"camelize":4,"string-template":21,"xtend/mutable":54}],7:[function(require,module,exports){
+},{"camelize":6,"string-template":24,"xtend/mutable":57}],9:[function(require,module,exports){
 'use strict';
 
 var OneVersionConstraint = require('individual/one-version');
@@ -366,7 +647,7 @@ function EvStore(elem) {
     return hash;
 }
 
-},{"individual/one-version":10}],8:[function(require,module,exports){
+},{"individual/one-version":12}],10:[function(require,module,exports){
 (function (global){
 var topLevel = typeof global !== 'undefined' ? global :
     typeof window !== 'undefined' ? window : {}
@@ -385,7 +666,7 @@ if (typeof document !== 'undefined') {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"min-document":1}],9:[function(require,module,exports){
+},{"min-document":3}],11:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -408,7 +689,7 @@ function Individual(key, value) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],10:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 'use strict';
 
 var Individual = require('./index.js');
@@ -432,14 +713,14 @@ function OneVersion(moduleName, version, defaultValue) {
     return Individual(key, defaultValue);
 }
 
-},{"./index.js":9}],11:[function(require,module,exports){
+},{"./index.js":11}],13:[function(require,module,exports){
 "use strict";
 
 module.exports = function isObject(x) {
 	return typeof x === "object" && x !== null;
 };
 
-},{}],12:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 var raf = require("raf")
 var TypedError = require("error/typed")
 
@@ -520,7 +801,41 @@ function main(initialState, view, opts) {
     }
 }
 
-},{"error/typed":6,"raf":18}],13:[function(require,module,exports){
+},{"error/typed":8,"raf":21}],15:[function(require,module,exports){
+// Generated by CoffeeScript 1.8.0
+(function() {
+  var Events, Mediator, mediator;
+
+  Events = require('backbone-events-standalone');
+
+  Mediator = (function() {
+    Mediator.prototype.attributes = {};
+
+    function Mediator() {}
+
+    Mediator.prototype.set = function(key, data) {
+      return this.attributes[key] = data;
+    };
+
+    Mediator.prototype.get = function(key) {
+      return this.attributes[key];
+    };
+
+    return Mediator;
+
+  })();
+
+  Events.mixin(Mediator.prototype);
+
+  mediator = new Mediator;
+
+  mediator.Mediator = Mediator;
+
+  module.exports = mediator;
+
+}).call(this);
+
+},{"backbone-events-standalone":2}],16:[function(require,module,exports){
 (function (process){
 // Generated by CoffeeScript 1.6.3
 (function() {
@@ -560,7 +875,7 @@ function main(initialState, view, opts) {
 */
 
 }).call(this,require('_process'))
-},{"_process":3}],14:[function(require,module,exports){
+},{"_process":5}],17:[function(require,module,exports){
 (function (global){
 /*! https://mths.be/punycode v1.4.0 by @mathias */
 ;(function(root) {
@@ -1097,7 +1412,7 @@ function main(initialState, view, opts) {
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],15:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1183,7 +1498,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],16:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -1270,13 +1585,13 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],17:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 'use strict';
 
 exports.decode = exports.parse = require('./decode');
 exports.encode = exports.stringify = require('./encode');
 
-},{"./decode":15,"./encode":16}],18:[function(require,module,exports){
+},{"./decode":18,"./encode":19}],21:[function(require,module,exports){
 var now = require('performance-now')
   , global = typeof window === 'undefined' ? {} : window
   , vendors = ['moz', 'webkit']
@@ -1358,7 +1673,7 @@ module.exports.cancel = function() {
   caf.apply(global, arguments)
 }
 
-},{"performance-now":13}],19:[function(require,module,exports){
+},{"performance-now":16}],22:[function(require,module,exports){
 (function (global){
 !function(e){if("object"==typeof exports)module.exports=e();else if("function"==typeof define&&define.amd)define(e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.routes=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
 
@@ -1545,7 +1860,7 @@ module.exports = Router
 (1)
 });
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 (function (process){
 module.exports = function (cb, opts) {
     var page = new Page(cb, opts);
@@ -1616,7 +1931,7 @@ function getPath () {
 }
 
 }).call(this,require('_process'))
-},{"_process":3}],21:[function(require,module,exports){
+},{"_process":5}],24:[function(require,module,exports){
 var nargs = /\{([0-9a-zA-Z]+)\}/g
 var slice = Array.prototype.slice
 
@@ -1652,7 +1967,7 @@ function template(string) {
     })
 }
 
-},{}],22:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -2386,7 +2701,7 @@ Url.prototype.parseHost = function() {
   if (host) this.hostname = host;
 };
 
-},{"./util":23,"punycode":14,"querystring":17}],23:[function(require,module,exports){
+},{"./util":26,"punycode":17,"querystring":20}],26:[function(require,module,exports){
 'use strict';
 
 module.exports = {
@@ -2404,22 +2719,22 @@ module.exports = {
   }
 };
 
-},{}],24:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 var createElement = require("./vdom/create-element.js")
 
 module.exports = createElement
 
-},{"./vdom/create-element.js":30}],25:[function(require,module,exports){
+},{"./vdom/create-element.js":33}],28:[function(require,module,exports){
 var diff = require("./vtree/diff.js")
 
 module.exports = diff
 
-},{"./vtree/diff.js":50}],26:[function(require,module,exports){
+},{"./vtree/diff.js":53}],29:[function(require,module,exports){
 var h = require("./virtual-hyperscript/index.js")
 
 module.exports = h
 
-},{"./virtual-hyperscript/index.js":37}],27:[function(require,module,exports){
+},{"./virtual-hyperscript/index.js":40}],30:[function(require,module,exports){
 var diff = require("./diff.js")
 var patch = require("./patch.js")
 var h = require("./h.js")
@@ -2436,12 +2751,12 @@ module.exports = {
     VText: VText
 }
 
-},{"./create-element.js":24,"./diff.js":25,"./h.js":26,"./patch.js":28,"./vnode/vnode.js":46,"./vnode/vtext.js":48}],28:[function(require,module,exports){
+},{"./create-element.js":27,"./diff.js":28,"./h.js":29,"./patch.js":31,"./vnode/vnode.js":49,"./vnode/vtext.js":51}],31:[function(require,module,exports){
 var patch = require("./vdom/patch.js")
 
 module.exports = patch
 
-},{"./vdom/patch.js":33}],29:[function(require,module,exports){
+},{"./vdom/patch.js":36}],32:[function(require,module,exports){
 var isObject = require("is-object")
 var isHook = require("../vnode/is-vhook.js")
 
@@ -2540,7 +2855,7 @@ function getPrototype(value) {
     }
 }
 
-},{"../vnode/is-vhook.js":41,"is-object":11}],30:[function(require,module,exports){
+},{"../vnode/is-vhook.js":44,"is-object":13}],33:[function(require,module,exports){
 var document = require("global/document")
 
 var applyProperties = require("./apply-properties")
@@ -2588,7 +2903,7 @@ function createElement(vnode, opts) {
     return node
 }
 
-},{"../vnode/handle-thunk.js":39,"../vnode/is-vnode.js":42,"../vnode/is-vtext.js":43,"../vnode/is-widget.js":44,"./apply-properties":29,"global/document":8}],31:[function(require,module,exports){
+},{"../vnode/handle-thunk.js":42,"../vnode/is-vnode.js":45,"../vnode/is-vtext.js":46,"../vnode/is-widget.js":47,"./apply-properties":32,"global/document":10}],34:[function(require,module,exports){
 // Maps a virtual DOM tree onto a real DOM tree in an efficient manner.
 // We don't want to read all of the DOM nodes in the tree so we use
 // the in-order tree indexing to eliminate recursion down certain branches.
@@ -2675,7 +2990,7 @@ function ascending(a, b) {
     return a > b ? 1 : -1
 }
 
-},{}],32:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 var applyProperties = require("./apply-properties")
 
 var isWidget = require("../vnode/is-widget.js")
@@ -2828,7 +3143,7 @@ function replaceRoot(oldRoot, newRoot) {
     return newRoot;
 }
 
-},{"../vnode/is-widget.js":44,"../vnode/vpatch.js":47,"./apply-properties":29,"./update-widget":34}],33:[function(require,module,exports){
+},{"../vnode/is-widget.js":47,"../vnode/vpatch.js":50,"./apply-properties":32,"./update-widget":37}],36:[function(require,module,exports){
 var document = require("global/document")
 var isArray = require("x-is-array")
 
@@ -2910,7 +3225,7 @@ function patchIndices(patches) {
     return indices
 }
 
-},{"./create-element":30,"./dom-index":31,"./patch-op":32,"global/document":8,"x-is-array":52}],34:[function(require,module,exports){
+},{"./create-element":33,"./dom-index":34,"./patch-op":35,"global/document":10,"x-is-array":55}],37:[function(require,module,exports){
 var isWidget = require("../vnode/is-widget.js")
 
 module.exports = updateWidget
@@ -2927,7 +3242,7 @@ function updateWidget(a, b) {
     return false
 }
 
-},{"../vnode/is-widget.js":44}],35:[function(require,module,exports){
+},{"../vnode/is-widget.js":47}],38:[function(require,module,exports){
 'use strict';
 
 var EvStore = require('ev-store');
@@ -2956,7 +3271,7 @@ EvHook.prototype.unhook = function(node, propertyName) {
     es[propName] = undefined;
 };
 
-},{"ev-store":7}],36:[function(require,module,exports){
+},{"ev-store":9}],39:[function(require,module,exports){
 'use strict';
 
 module.exports = SoftSetHook;
@@ -2975,7 +3290,7 @@ SoftSetHook.prototype.hook = function (node, propertyName) {
     }
 };
 
-},{}],37:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 'use strict';
 
 var isArray = require('x-is-array');
@@ -3114,7 +3429,7 @@ function errorString(obj) {
     }
 }
 
-},{"../vnode/is-thunk":40,"../vnode/is-vhook":41,"../vnode/is-vnode":42,"../vnode/is-vtext":43,"../vnode/is-widget":44,"../vnode/vnode.js":46,"../vnode/vtext.js":48,"./hooks/ev-hook.js":35,"./hooks/soft-set-hook.js":36,"./parse-tag.js":38,"x-is-array":52}],38:[function(require,module,exports){
+},{"../vnode/is-thunk":43,"../vnode/is-vhook":44,"../vnode/is-vnode":45,"../vnode/is-vtext":46,"../vnode/is-widget":47,"../vnode/vnode.js":49,"../vnode/vtext.js":51,"./hooks/ev-hook.js":38,"./hooks/soft-set-hook.js":39,"./parse-tag.js":41,"x-is-array":55}],41:[function(require,module,exports){
 'use strict';
 
 var split = require('browser-split');
@@ -3170,7 +3485,7 @@ function parseTag(tag, props) {
     return props.namespace ? tagName : tagName.toUpperCase();
 }
 
-},{"browser-split":2}],39:[function(require,module,exports){
+},{"browser-split":4}],42:[function(require,module,exports){
 var isVNode = require("./is-vnode")
 var isVText = require("./is-vtext")
 var isWidget = require("./is-widget")
@@ -3212,14 +3527,14 @@ function renderThunk(thunk, previous) {
     return renderedThunk
 }
 
-},{"./is-thunk":40,"./is-vnode":42,"./is-vtext":43,"./is-widget":44}],40:[function(require,module,exports){
+},{"./is-thunk":43,"./is-vnode":45,"./is-vtext":46,"./is-widget":47}],43:[function(require,module,exports){
 module.exports = isThunk
 
 function isThunk(t) {
     return t && t.type === "Thunk"
 }
 
-},{}],41:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 module.exports = isHook
 
 function isHook(hook) {
@@ -3228,7 +3543,7 @@ function isHook(hook) {
        typeof hook.unhook === "function" && !hook.hasOwnProperty("unhook"))
 }
 
-},{}],42:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualNode
@@ -3237,7 +3552,7 @@ function isVirtualNode(x) {
     return x && x.type === "VirtualNode" && x.version === version
 }
 
-},{"./version":45}],43:[function(require,module,exports){
+},{"./version":48}],46:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = isVirtualText
@@ -3246,17 +3561,17 @@ function isVirtualText(x) {
     return x && x.type === "VirtualText" && x.version === version
 }
 
-},{"./version":45}],44:[function(require,module,exports){
+},{"./version":48}],47:[function(require,module,exports){
 module.exports = isWidget
 
 function isWidget(w) {
     return w && w.type === "Widget"
 }
 
-},{}],45:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 module.exports = "2"
 
-},{}],46:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 var version = require("./version")
 var isVNode = require("./is-vnode")
 var isWidget = require("./is-widget")
@@ -3330,7 +3645,7 @@ function VirtualNode(tagName, properties, children, key, namespace) {
 VirtualNode.prototype.version = version
 VirtualNode.prototype.type = "VirtualNode"
 
-},{"./is-thunk":40,"./is-vhook":41,"./is-vnode":42,"./is-widget":44,"./version":45}],47:[function(require,module,exports){
+},{"./is-thunk":43,"./is-vhook":44,"./is-vnode":45,"./is-widget":47,"./version":48}],50:[function(require,module,exports){
 var version = require("./version")
 
 VirtualPatch.NONE = 0
@@ -3354,7 +3669,7 @@ function VirtualPatch(type, vNode, patch) {
 VirtualPatch.prototype.version = version
 VirtualPatch.prototype.type = "VirtualPatch"
 
-},{"./version":45}],48:[function(require,module,exports){
+},{"./version":48}],51:[function(require,module,exports){
 var version = require("./version")
 
 module.exports = VirtualText
@@ -3366,7 +3681,7 @@ function VirtualText(text) {
 VirtualText.prototype.version = version
 VirtualText.prototype.type = "VirtualText"
 
-},{"./version":45}],49:[function(require,module,exports){
+},{"./version":48}],52:[function(require,module,exports){
 var isObject = require("is-object")
 var isHook = require("../vnode/is-vhook")
 
@@ -3426,7 +3741,7 @@ function getPrototype(value) {
   }
 }
 
-},{"../vnode/is-vhook":41,"is-object":11}],50:[function(require,module,exports){
+},{"../vnode/is-vhook":44,"is-object":13}],53:[function(require,module,exports){
 var isArray = require("x-is-array")
 
 var VPatch = require("../vnode/vpatch")
@@ -3855,7 +4170,7 @@ function appendPatch(apply, patch) {
     }
 }
 
-},{"../vnode/handle-thunk":39,"../vnode/is-thunk":40,"../vnode/is-vnode":42,"../vnode/is-vtext":43,"../vnode/is-widget":44,"../vnode/vpatch":47,"./diff-props":49,"x-is-array":52}],51:[function(require,module,exports){
+},{"../vnode/handle-thunk":42,"../vnode/is-thunk":43,"../vnode/is-vnode":45,"../vnode/is-vtext":46,"../vnode/is-widget":47,"../vnode/vpatch":50,"./diff-props":52,"x-is-array":55}],54:[function(require,module,exports){
 /**
  * @license
  * Copyright (c) 2014 The Polymer Project Authors. All rights reserved.
@@ -11074,7 +11389,7 @@ window.CustomElements.addModule(function(scope) {
 (function(scope) {
   window.Platform = scope;
 })(window.WebComponents);
-},{}],52:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 var nativeIsArray = Array.isArray
 var toString = Object.prototype.toString
 
@@ -11084,7 +11399,7 @@ function isArray(obj) {
     return toString.call(obj) === "[object Array]"
 }
 
-},{}],53:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 module.exports = extend
 
 var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -11105,7 +11420,7 @@ function extend() {
     return target
 }
 
-},{}],54:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 module.exports = extend
 
 var hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -11124,32 +11439,46 @@ function extend(target) {
     return target
 }
 
-},{}],55:[function(require,module,exports){
-module.exports =  function(){
-    require('./elements/alertButton')
+},{}],58:[function(require,module,exports){
+module.exports =  function(mediator){
+    require('./elements/alertButton')(mediator)
 };
 
 
-},{"./elements/alertButton":56}],56:[function(require,module,exports){
-var alertButtonPrototype = Object.create(HTMLButtonElement.prototype);
-alertButtonPrototype.createdCallback = function() {
-    this.textContent = "I'm an x-foo button!";
-};
+},{"./elements/alertButton":59}],59:[function(require,module,exports){
 
-var alertButton = document.registerElement('alert-button', {
-    prototype: alertButtonPrototype
-});
-},{}],57:[function(require,module,exports){
+
+module.exports = function(mediator){
+    var alertButtonPrototype = Object.create(HTMLButtonElement.prototype);
+    var vDom = require('virtual-dom');
+    alertButtonPrototype.createdCallback = function() {
+        this.textContent = "I'm an x-foo button!";
+
+    };
+    alertButtonPrototype.attachedCallback = function(){
+        mediator.trigger('test', 'testcontent');
+        this.appendChild(vDom.create(vDom.h('button',this.getAttribute('data-button-title'))));
+    };
+
+    var alertButton = document.registerElement('alert-button', {
+        prototype: alertButtonPrototype
+    });
+};
+},{"virtual-dom":30}],60:[function(require,module,exports){
 require('webcomponents.js');
-require('./components/components')();
+
 var h = require('virtual-dom/h');
+var mediator = require('mediatorjs');
+var mInstance = new mediator.Mediator();
+require('./components/components')(mInstance);
+mInstance.on('test', function(message){
+   console.log(message)
+});
 var xtend = require('xtend');
 
 var main = require('main-loop');
-var state = {
-    path: location.pathname
-};
-var router = require('./router.js');
+var state = {path: location.pathname};
+var router = require('./router.js')();
 var loop = main(state, render, require('virtual-dom'));
 function render(state) {
     var m = router.match(state.path);
@@ -11167,43 +11496,55 @@ document.addEventListener("DOMContentLoaded", function () {
     require('catch-links')(window, show);
 });
 
-},{"./components/components":55,"./router.js":58,"catch-links":5,"main-loop":12,"single-page":20,"virtual-dom":27,"virtual-dom/h":26,"webcomponents.js":51,"xtend":53}],58:[function(require,module,exports){
+},{"./components/components":58,"./router.js":61,"catch-links":7,"main-loop":14,"mediatorjs":15,"single-page":23,"virtual-dom":30,"virtual-dom/h":29,"webcomponents.js":54,"xtend":56}],61:[function(require,module,exports){
 var h = require('virtual-dom/h');
 var router = require('routes')();
-module.exports = router;
+module.exports = function(){
+    router.addRoute('/', function (m) {
+        return layout(m.state, [
+                h('div', 'welcome!'),
+                h('alert-button',
+                    {
+                        attributes: {
+                            'data-button-title': 'Click me'
+                        }
+                    }
+                )
+            ]
+        )
+    });
 
-router.addRoute('/', function (m) {
-    return layout(m.state, [h('div', 'welcome!'),    h('alert-button')])
-});
+    router.addRoute('/wow', function (m) {
+        return layout(m.state, h('div', 'wowsers!'))
+    });
 
-router.addRoute('/wow', function (m) {
-    return layout(m.state, h('div', 'wowsers!'))
-});
+    router.addRoute('/amaze', function (m) {
+        return layout(m.state, h('div', [
+            h('div', 'such universal javascript!'),
+            h('div', 'very client server')
+        ]))
+    });
 
-router.addRoute('/amaze', function (m) {
-    return layout(m.state, h('div', [
-        h('div', 'such universal javascript!'),
-        h('div', 'very client server')
-    ]))
-});
+    function layout(state, page) {
+        var links = ['/', '/wow', '/amaze'];
+        var titles = {
+            '/': 'home',
+            '/wow': 'wow',
+            '/amaze': 'amaze'
+        };
+        return h('div', [
+            h('h1', titles[state.path]),
+            h('div.links', links.map(function (href) {
+                return h(
+                    'a' + (state.path === href ? '.active' : ''),
+                    {href: href},
+                    titles[href]
+                )
+            })),
+            page
+        ])
+    }
+    return router;
+};
 
-function layout (state, page) {
-    var links = [ '/', '/wow', '/amaze' ];
-    var titles = {
-        '/': 'home',
-        '/wow': 'wow',
-        '/amaze': 'amaze'
-    };
-    return h('div', [
-        h('h1', titles[state.path]),
-        h('div.links', links.map(function (href) {
-            return h(
-                'a' + (state.path === href ? '.active' : ''),
-                { href: href },
-                titles[href]
-            )
-        })),
-        page
-    ])
-}
-},{"routes":19,"virtual-dom/h":26}]},{},[57]);
+},{"routes":22,"virtual-dom/h":29}]},{},[60]);
