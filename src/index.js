@@ -1,14 +1,28 @@
 require('webcomponents.js');
 require('./components/components')();
-var vDom = require('virtual-dom');
+var h = require('virtual-dom/h');
+var xtend = require('xtend');
 
-var appVhtml = vDom.h('alert-button', 'test');
+var main = require('main-loop');
+var state = {
+    path: location.pathname
+};
+var router = require('./router.js');
+var loop = main(state, render, require('virtual-dom'));
+function render(state) {
+    var m = router.match(state.path);
+    if (!m) return h('div.error', 'not found');
+    else return m.fn(xtend(m, {state: state}))
+}
 
-window.addEventListener('WebComponentsReady', function(e) {
-    // imports are loaded and elements have been registered
+document.addEventListener("DOMContentLoaded", function () {
+    var target = document.querySelector('#content');
+    target.parentNode.replaceChild(loop.target, target);
 
-    var appHtml = vDom.create(appVhtml);
-    var app = document.getElementById('app');
-    app.appendChild(appHtml);
+    var show = require('single-page')(function (href) {
+        loop.update(xtend({path: href}))
+    });
+    require('catch-links')(window, show);
+
 
 });

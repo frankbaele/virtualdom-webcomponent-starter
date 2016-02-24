@@ -24,8 +24,16 @@
   "homepage": "https://github.com/frankbaele/virtualdom-webcomponent-starter#readme",
   "dependencies": {
     "browserify": "^13.0.0",
+    "catch-links": "^2.0.0",
+    "main-loop": "^3.2.0",
+    "routes": "^2.1.0",
+    "single-page": "^1.1.0",
     "virtual-dom": "^2.1.1",
     "watchify": "^3.7.0",
     "webcomponents.js": "^0.7.21"
+  },
+  "devDependencies": {
+    "connect": "^3.4.1",
+    "serve-static": "^1.10.2"
   }
 }
