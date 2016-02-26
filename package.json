@@ -25,12 +25,14 @@
   "dependencies": {
     "browserify": "^13.0.0",
     "catch-links": "^2.0.0",
+    "html5-history-api": "^4.2.5",
     "main-loop": "^3.2.0",
+    "mediatorjs": "^0.1.4",
+    "polymer-js": "^1.0.5",
     "routes": "^2.1.0",
     "single-page": "^1.1.0",
     "virtual-dom": "^2.1.1",
     "watchify": "^3.7.0",
-    "mediatorjs": "^0.1.4",
     "webcomponents.js": "^0.7.21"
   },
   "devDependencies": {

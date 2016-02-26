@@ -1,5 +1,5 @@
-require('webcomponents.js');
-
+require('webcomponents.js/webcomponents-lite');
+require('html5-history-api');
 var h = require('virtual-dom/h');
 var mediator = require('mediatorjs');
 var mInstance = new mediator.Mediator();
@@ -7,8 +7,8 @@ require('./components/components')(mInstance);
 mInstance.on('test', function(message){
    console.log(message)
 });
-var xtend = require('xtend');
 
+var xtend = require('xtend');
 var main = require('main-loop');
 var state = {path: location.pathname};
 var router = require('./router.js')();
@@ -26,5 +26,6 @@ document.addEventListener("DOMContentLoaded", function () {
     var show = require('single-page')(function (href) {
         loop.update(xtend({path: href}))
     });
+
     require('catch-links')(window, show);
 });
