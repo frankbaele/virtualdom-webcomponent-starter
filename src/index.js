@@ -1,5 +1,6 @@
 require('webcomponents.js/webcomponents-lite');
 require('html5-history-api');
+var Polymer = require('polymer-js');
 var h = require('virtual-dom/h');
 var mediator = require('mediatorjs');
 var mInstance = new mediator.Mediator();

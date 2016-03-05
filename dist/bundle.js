@@ -13812,25 +13812,33 @@ module.exports =  function(mediator){
 
 
 },{"./elements/alertButton":61}],61:[function(require,module,exports){
-var h = require('virtual-dom/h');
+var vdom = require('virtual-dom');
 var Polymer = require('polymer-js');
-module.exports = function(mediator){
+module.exports = function(){
     // register an element
-    Polymer({
+    var tree = vdom.h('div', function(){
 
+    });
+    Polymer({
+        listeners: {
+            'dataUpdate': 'dataUpdate'
+        },
         is: 'alert-button',
 
         // See below for lifecycle callbacks
         created: function() {
             this.textContent = 'My element!';
+        },
+        dataUpdate:function(data){
+            this.textContent = data;
         }
-
     });
 
 };
-},{"polymer-js":18,"virtual-dom/h":31}],62:[function(require,module,exports){
+},{"polymer-js":18,"virtual-dom":32}],62:[function(require,module,exports){
 require('webcomponents.js/webcomponents-lite');
 require('html5-history-api');
+var Polymer = require('polymer-js');
 var h = require('virtual-dom/h');
 var mediator = require('mediatorjs');
 var mInstance = new mediator.Mediator();
@@ -13861,7 +13869,7 @@ document.addEventListener("DOMContentLoaded", function () {
     require('catch-links')(window, show);
 });
 
-},{"./components/components":60,"./router.js":63,"catch-links":7,"html5-history-api":11,"main-loop":15,"mediatorjs":16,"single-page":25,"virtual-dom":32,"virtual-dom/h":31,"webcomponents.js/webcomponents-lite":56,"xtend":58}],63:[function(require,module,exports){
+},{"./components/components":60,"./router.js":63,"catch-links":7,"html5-history-api":11,"main-loop":15,"mediatorjs":16,"polymer-js":18,"single-page":25,"virtual-dom":32,"virtual-dom/h":31,"webcomponents.js/webcomponents-lite":56,"xtend":58}],63:[function(require,module,exports){
 var h = require('virtual-dom/h');
 var router = require('routes')();
 module.exports = function(){

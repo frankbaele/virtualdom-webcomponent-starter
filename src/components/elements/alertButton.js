@@ -1,16 +1,23 @@
-var h = require('virtual-dom/h');
+var vdom = require('virtual-dom');
 var Polymer = require('polymer-js');
-module.exports = function(mediator){
+module.exports = function(){
     // register an element
-    Polymer({
+    var tree = vdom.h('div', function(){
 
+    });
+    Polymer({
+        listeners: {
+            'dataUpdate': 'dataUpdate'
+        },
         is: 'alert-button',
 
         // See below for lifecycle callbacks
         created: function() {
             this.textContent = 'My element!';
+        },
+        dataUpdate:function(data){
+            this.textContent = data;
         }
-
     });
 
 };
